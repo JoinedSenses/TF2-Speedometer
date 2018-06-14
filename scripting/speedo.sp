@@ -1,6 +1,6 @@
 #pragma semicolon 1
 #include <sourcemod>
-#include <smlib>
+#include <smlib/math>
 #pragma newdecls required
 
 #define PLUGIN_VERSION "0.0.2"
@@ -36,7 +36,7 @@ public Action Command_Speedo(int client, int args){
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon){
-	if (IsValidEntity(client) && speedo[client]){
+	if (speedo[client]){
 		float currentVel[3], currentSpd;
 		GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
 		currentSpd = SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]));
