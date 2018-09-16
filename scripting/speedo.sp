@@ -82,6 +82,10 @@ public Action Command_Speedo(int client, int args) {
 			}
 			return Plugin_Handled;			
 		}
+		default: {
+			PrintToChat(client, "\x01[\x03Speedo\x01] Unknown parameter");
+			return Plugin_Handled;
+		}
 	}
 	speedo[client] = true;
 	
