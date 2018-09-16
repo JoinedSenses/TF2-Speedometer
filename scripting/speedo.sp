@@ -2,7 +2,7 @@
 #include <sourcemod>
 #include <smlib/math>
 #pragma newdecls required
-#define PLUGIN_VERSION "0.0.3"
+#define PLUGIN_VERSION "0.0.4"
 
 enum SpeedoType {
 	DISABLED,
@@ -61,26 +61,27 @@ public Action Command_Speedo(int client, int args) {
 		ReplyToCommand(client, "\x01[\x03Speedo\x01] Invalid parameter. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03d");
 		return Plugin_Handled;
 	}
-
-	if (StrEqual(mode, "h")) {
-		speedotype[client] = HORIZONTAL;
-		PrintToChat(client, "\x01[\x03Speedo\x01] \x03Horizontal Mode Enabled");
-	}
-	else if (StrEqual(mode, "v")) {
-		speedotype[client] = VERTICAL;
-		PrintToChat(client, "\x01[\x03Speedo\x01] \x03Vertical Mode Enabled");
-	}
-	else if (StrEqual(mode, "a")) {
-		speedotype[client] = ABSOLUTE;
-		PrintToChat(client, "\x01[\x03Speedo\x01] \x03Absolute Mode Enabled");
-	}
-	else if (StrEqual(mode, "d")) {
-		if (speedo[client]) {
-			speedo[client] = false;
-			speedotype[client] = DISABLED;
-			PrintToChat(client, "\x01[\x03Speedo\x01] \x03Disabled");
+	switch (mode[0]){
+		case 'h','H': {
+			speedotype[client] = HORIZONTAL;
+			PrintToChat(client, "\x01[\x03Speedo\x01] \x03Horizontal Mode Enabled");			
 		}
-		return Plugin_Handled;
+		case 'v','V': {
+			speedotype[client] = VERTICAL;
+			PrintToChat(client, "\x01[\x03Speedo\x01] \x03Vertical Mode Enabled");			
+		}
+		case 'a','A': {
+			speedotype[client] = ABSOLUTE;
+			PrintToChat(client, "\x01[\x03Speedo\x01] \x03Absolute Mode Enabled");			
+		}
+		case 'd','D': {
+			if (speedo[client]) {
+				speedo[client] = false;
+				speedotype[client] = DISABLED;
+				PrintToChat(client, "\x01[\x03Speedo\x01] \x03Disabled");
+			}
+			return Plugin_Handled;			
+		}
 	}
 	speedo[client] = true;
 	
