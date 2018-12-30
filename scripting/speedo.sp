@@ -53,8 +53,8 @@ public void OnClientDisconnect(int client) {
 	SetDefaultColor(client);
 }
 
-public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon){
-	if (g_bEnabled[client]) {
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon) {
+	if (g_bEnabled[client] && !(buttons & IN_SCORE)) {
 		char horizontal[24];
 		char vertical[24];
 		char absolute[24];
