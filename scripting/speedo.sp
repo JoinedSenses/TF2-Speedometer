@@ -72,7 +72,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		char text[128];
 		Format(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
 
-		SetHudTextParams(0.35, 0.67, 1.0, g_iColor[client][0], g_iColor[client][1], g_iColor[client][2], 255);
+		SetHudTextParams(0.47, 0.67, 1.0, g_iColor[client][0], g_iColor[client][1], g_iColor[client][2], 255);
 		ShowSyncHudText(client, g_hSpeedOMeter, text);
 	}
 }
