@@ -21,8 +21,8 @@ Handle g_hSpeedOMeter;
 Regex g_hRegexHex;
 int g_iFlags[MAXPLAYERS+1];
 int g_iColor[MAXPLAYERS+1][3];
-bool g_bEnabled[MAXPLAYERS+1];
 int g_iDefaultColor[] = {163, 163, 163};
+bool g_bEnabled[MAXPLAYERS+1];
 
 public Plugin myinfo = {
 	name = "Speedometer",
