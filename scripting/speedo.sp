@@ -95,8 +95,11 @@ void LateLoad() {
 			OnClientCookiesCached(i);
 		}
 	}
-}public void OnClientConnected(int client) {
+}
+
+public void OnClientConnected(int client) {
 	g_bEnabled[client] = false;
+	g_iLastFrame[client] = 0;
 	SetDefaults(client);
 }
 
