@@ -18,7 +18,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.2.2"
+#define PLUGIN_VERSION "0.2.3"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
 #define DISABLED 0
@@ -95,12 +95,15 @@ void LateLoad() {
 			OnClientCookiesCached(i);
 		}
 	}
+}public void OnClientConnected(int client) {
+	g_bEnabled[client] = false;
+	SetDefaults(client);
 }
 
 public void OnClientCookiesCached(int client) {
 	char sEnable[2];
 	GetClientCookie(client, g_hCookieSpeedoEnabled, sEnable, sizeof(sEnable));
-	g_bEnabled[client] = (sEnable[0] != '0' && StringToInt(sEnable));
+	g_bEnabled[client] = (sEnable[0] != '\0' && StringToInt(sEnable));
 
 	char flags[2];
 	GetClientCookie(client, g_hCookieSpeedoFlags, flags, sizeof(flags));
@@ -120,11 +123,6 @@ public void OnClientCookiesCached(int client) {
 		g_fPos[client][XPOS] = StringToFloat(buffer[XPOS]);
 		g_fPos[client][YPOS] = StringToFloat(buffer[YPOS]);
 	}
-}
-
-public void OnClientDisconnect(int client) {
-	g_bEnabled[client] = false;
-	SetDefaults(client);
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
