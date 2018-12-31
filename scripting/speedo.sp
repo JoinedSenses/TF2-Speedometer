@@ -132,7 +132,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			else if (buttons & (IN_ATTACK3|IN_JUMP)) {
 				g_fPos[client][XPOS] = XDEFAULT;
 				g_fPos[client][YPOS] = YDEFAULT;
-
 				
 				g_bEditing[client] = false;
 				SetPosCookie(client, g_fPos[client]);
