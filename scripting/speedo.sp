@@ -57,6 +57,8 @@ public Plugin myinfo = {
 	url = "http://github.com/JoinedSenses"
 };
 
+// ------------------- SM API
+
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
 	g_bLateLoad = late;
 	return APLRes_Success;
@@ -83,50 +85,29 @@ public void OnPluginStart() {
 	g_hCookieSpeedoColor = RegClientCookie("Speedo_Color", "Speedo color cookie", CookieAccess_Private);
 	g_hCookieSpeedoPos = RegClientCookie("Speedo_Position", "Speedo position cookie", CookieAccess_Private);
 
-	LateLoad();
-}
-
-void LateLoad() {
-	if (!g_bLateLoad) {
-		return;
-	}
-	for (int i = 1; i <= MaxClients; i++) {
-		if (IsValidClient(i) && AreClientCookiesCached(i)) {
-			OnClientCookiesCached(i);
+	if (g_bLateLoad) {
+		for (int i = 1; i <= MaxClients; i++) {
+			if (IsValidClient(i) && AreClientCookiesCached(i)) {
+				OnClientCookiesCached(i);
+			}
 		}
 	}
 }
 
 public void OnClientConnected(int client) {
-	g_bEnabled[client] = false;
-	g_iLastFrame[client] = 0;
 	SetDefaults(client);
 }
 
 public void OnClientCookiesCached(int client) {
-	char sEnable[2];
-	GetClientCookie(client, g_hCookieSpeedoEnabled, sEnable, sizeof(sEnable));
-	g_bEnabled[client] = (sEnable[0] != '\0' && StringToInt(sEnable));
-
-	char flags[2];
-	GetClientCookie(client, g_hCookieSpeedoFlags, flags, sizeof(flags));
-	g_iFlags[client] = StringToInt(flags);
-
-	char sColor[7];
-	GetClientCookie(client, g_hCookieSpeedoColor, sColor, sizeof(sColor));
-	if (sColor[0] != '\0') {
-		HexStrToRGB(sColor, g_iColor[client]);
-	}
-
-	char sPos[10];
-	GetClientCookie(client, g_hCookieSpeedoPos, sPos, sizeof(sPos));
-	if (sPos[0] != '\0') {
-		char buffer[2][5];
-		ExplodeString(sPos, " ", buffer, sizeof(buffer), sizeof(buffer[]));
-		g_fPos[client][XPOS] = StringToFloat(buffer[XPOS]);
-		g_fPos[client][YPOS] = StringToFloat(buffer[YPOS]);
-	}
+	GetCookieEnabled(client);
+	GetCookieFlags(client);
+	GetCookieColor(client);
+	GetCookiePosition(client);
 }
+
+
+
+
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
 	if (!IsValidClient(client)) {
@@ -182,9 +163,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	return Plugin_Continue;
 }
 
-Action timerUnfreeze(Handle timer, int client) {
-	SetEntityFlags(client, GetEntityFlags(client) & ~(FL_ATCONTROLS|FL_FROZEN));
-}
+// ------------------- Commands
 
 public Action cmdSpeedo(int client, int args) {
 	if (!client) {
@@ -310,102 +289,7 @@ public Action cmdPos(int client, int args) {
 	return Plugin_Handled;
 }
 
-void SetEnableCookie(int client, bool enabled) {
-	char sEnable[2];
-	Format(sEnable, sizeof(sEnable), "%i", enabled);
-	SetClientCookie(client, g_hCookieSpeedoEnabled, sEnable);
-}
-
-void SetFlagsCookie(int client, int flags) {
-	char sFlags[2];
-	Format(sFlags, sizeof(sFlags), "%i", flags);
-	SetClientCookie(client, g_hCookieSpeedoFlags, sFlags);
-}
-
-void SetColorCookie(int client, const char[] hex) {
-	SetClientCookie(client, g_hCookieSpeedoColor, hex);
-	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
-}
-
-void SetPosCookie(int client, float pos[2]) {
-	char posstr[10];
-	Format(posstr, sizeof(posstr), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
-	SetClientCookie(client, g_hCookieSpeedoPos, posstr);
-	PrintToChat(client, "\x01[\x03Speedo\x01] Position saved (%0.2f, %0.2f)", pos[0], pos[1]);
-}
-
-void SetDefaults(int client) {
-	g_iColor[client] = g_iDefaultColor;
-	g_fPos[client][XPOS] = XDEFAULT;
-	g_fPos[client][YPOS] = YDEFAULT;
-}
-
-bool IsValidClient(int client) {
-	return (0 < client <= MaxClients && IsClientConnected(client) && IsClientInGame(client) && !IsFakeClient(client));
-}
-
-bool IsValidHex(const char[] hex) {
-	return (strlen(hex) == 6 && g_hRegexHex.Match(hex));
-}
-
-void HexStrToRGB(const char[] hex, int rgb[3]) {
-	int hexInt = StringToInt(hex, 16);
-	rgb[0] = ((hexInt >> 16) & 0xFF);
-	rgb[1] = ((hexInt >> 8) & 0xFF);
-	rgb[2] = ((hexInt >> 0) & 0xFF);
-}
-
-void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
-	int hex; 
-	hex |= ((rgb[0] & 0xFF) << 16);
-	hex |= ((rgb[1] & 0xFF) <<  8);
-	hex |= ((rgb[2] & 0xFF) <<  0);
-
-	Format(hexstr, size, "%06X", hex);
-}
-
-int SetClientFlag(int client, int flag) {
-	if (flag) {
-		if (g_iFlags[client] & flag) {
-			g_iFlags[client] &= ~flag;
-		}
-		else {
-			g_iFlags[client] |= flag;
-		}		
-	}
-	else g_iFlags[client] = DISABLED;
-
-	return g_iFlags[client];
-}
-
-int GetClientFlags(int client) {
-	return g_iFlags[client];
-}
-
-float CalcVelocity(int client, int type) {
-	float currentVel[3];
-	GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
-	switch (type) {
-		case HORIZONTAL: {
-			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]));
-		}
-		case VERTICAL: {
-			return abs(currentVel[2]);
-		}
-		case ABSOLUTE: {
-			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]) + (currentVel[2]*currentVel[2]));
-		}
-	}
-	return -1.0;
-}
-
-float abs(float x) {
-   return (x > 0) ? x : -x;
-}
-
-void displayMenu(int client) {
-	g_Menu.Display(client, MENU_TIME_FOREVER);
-}
+// ------------------- Menu
 
 void BuildMenu() {
 	g_Menu = new Menu(menuHandler_Speedo, MENU_ACTIONS_DEFAULT|MenuAction_DisplayItem|MenuAction_DrawItem);
@@ -453,4 +337,147 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 		}
 	}
 	return 0;
+}
+
+// ------------------- Cookie Getters
+
+void GetCookieEnabled(int client) {
+	char sEnable[2];
+	GetClientCookie(client, g_hCookieSpeedoEnabled, sEnable, sizeof(sEnable));
+	g_bEnabled[client] = (sEnable[0] != '\0' && StringToInt(sEnable));
+}
+
+void GetCookieFlags(int client) {
+	char sFlags[2];
+	GetClientCookie(client, g_hCookieSpeedoFlags, sFlags, sizeof(sFlags));
+	g_iFlags[client] = StringToInt(sFlags);
+}
+
+
+void GetCookieColor(int client) {
+	char sColor[7];
+	GetClientCookie(client, g_hCookieSpeedoColor, sColor, sizeof(sColor));
+	if (sColor[0] != '\0') {
+		HexStrToRGB(sColor, g_iColor[client]);
+	}	
+}
+
+void GetCookiePosition(int client) {
+	char sPos[10];
+	GetClientCookie(client, g_hCookieSpeedoPos, sPos, sizeof(sPos));
+	if (sPos[0] != '\0') {
+		char buffer[2][5];
+		ExplodeString(sPos, " ", buffer, sizeof(buffer), sizeof(buffer[]));
+		g_fPos[client][XPOS] = StringToFloat(buffer[XPOS]);
+		g_fPos[client][YPOS] = StringToFloat(buffer[YPOS]);
+	}	
+}
+
+// ------------------- Cookie Setters
+
+void SetEnableCookie(int client, bool enabled) {
+	char sEnable[2];
+	Format(sEnable, sizeof(sEnable), "%i", enabled);
+	SetClientCookie(client, g_hCookieSpeedoEnabled, sEnable);
+}
+
+void SetFlagsCookie(int client, int flags) {
+	char sFlags[2];
+	Format(sFlags, sizeof(sFlags), "%i", flags);
+	SetClientCookie(client, g_hCookieSpeedoFlags, sFlags);
+}
+
+void SetColorCookie(int client, const char[] hex) {
+	SetClientCookie(client, g_hCookieSpeedoColor, hex);
+	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
+}
+
+void SetPosCookie(int client, float pos[2]) {
+	char posstr[10];
+	Format(posstr, sizeof(posstr), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
+	SetClientCookie(client, g_hCookieSpeedoPos, posstr);
+	PrintToChat(client, "\x01[\x03Speedo\x01] Position saved (%0.2f, %0.2f)", pos[0], pos[1]);
+}
+
+// ------------------- Timer
+
+Action timerUnfreeze(Handle timer, int client) {
+	SetEntityFlags(client, GetEntityFlags(client) & ~(FL_ATCONTROLS|FL_FROZEN));
+}
+
+// ------------------- Internal Functions
+
+bool IsValidClient(int client) {
+	return (0 < client <= MaxClients && IsClientConnected(client) && IsClientInGame(client) && !IsFakeClient(client));
+}
+
+bool IsValidHex(const char[] hex) {
+	return (strlen(hex) == 6 && g_hRegexHex.Match(hex));
+}
+
+void displayMenu(int client) {
+	g_Menu.Display(client, MENU_TIME_FOREVER);
+}
+
+void SetDefaults(int client) {
+	g_bEnabled[client] = false;
+	g_iLastFrame[client] = 0;
+	g_iColor[client] = g_iDefaultColor;
+	g_fPos[client][XPOS] = XDEFAULT;
+	g_fPos[client][YPOS] = YDEFAULT;
+}
+
+void HexStrToRGB(const char[] hex, int rgb[3]) {
+	int hexInt = StringToInt(hex, 16);
+	rgb[0] = ((hexInt >> 16) & 0xFF);
+	rgb[1] = ((hexInt >> 8) & 0xFF);
+	rgb[2] = ((hexInt >> 0) & 0xFF);
+}
+
+void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
+	int hex; 
+	hex |= ((rgb[0] & 0xFF) << 16);
+	hex |= ((rgb[1] & 0xFF) <<  8);
+	hex |= ((rgb[2] & 0xFF) <<  0);
+
+	Format(hexstr, size, "%06X", hex);
+}
+
+int GetClientFlags(int client) {
+	return g_iFlags[client];
+}
+
+int SetClientFlag(int client, int flag) {
+	if (flag) {
+		if (g_iFlags[client] & flag) {
+			g_iFlags[client] &= ~flag;
+		}
+		else {
+			g_iFlags[client] |= flag;
+		}		
+	}
+	else g_iFlags[client] = DISABLED;
+
+	return g_iFlags[client];
+}
+
+float abs(float x) {
+   return (x > 0) ? x : -x;
+}
+
+float CalcVelocity(int client, int type) {
+	float currentVel[3];
+	GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
+	switch (type) {
+		case HORIZONTAL: {
+			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]));
+		}
+		case VERTICAL: {
+			return abs(currentVel[2]);
+		}
+		case ABSOLUTE: {
+			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]) + (currentVel[2]*currentVel[2]));
+		}
+	}
+	return -1.0;
 }
