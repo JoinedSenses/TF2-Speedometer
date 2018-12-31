@@ -119,7 +119,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 			if (buttons & (IN_ATTACK|IN_ATTACK2)) {
 				g_bEditing[client] = false;
-				SetPosCookie(client, g_fPos[client]);
+				SetCookiePosition(client, g_fPos[client]);
 
 				CreateTimer(0.2, timerUnfreeze, client);
 			}
@@ -128,7 +128,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 				g_fPos[client][YPOS] = YDEFAULT;
 				
 				g_bEditing[client] = false;
-				SetPosCookie(client, g_fPos[client]);
+				SetCookiePosition(client, g_fPos[client]);
 				CreateTimer(0.2, timerUnfreeze, client);
 			}
 		}
@@ -199,8 +199,8 @@ public Action cmdSpeedo(int client, int args) {
 		}
 	}
 	int flags = SetClientFlag(client, flag);
-	SetEnableCookie(client, (g_bEnabled[client] = !!flags));
-	SetFlagsCookie(client, flags);
+	SetCookieEnable(client, (g_bEnabled[client] = !!flags));
+	SetCookieFlags(client, flags);
 
 	return Plugin_Handled;
 }
@@ -214,7 +214,7 @@ public Action cmdColor(int client, int args) {
 		g_iColor[client] = g_iDefaultColor;
 		char hex[7];
 		RGBToHexStr(g_iColor[client], hex, sizeof(hex));
-		SetColorCookie(client, hex);
+		SetCookieColor(client, hex);
 		PrintToChat(client, "\x01[\x03Speedo\x01] Color reset. Use /speedo <hexvalue> to change.");
 		return Plugin_Handled;
 	}
@@ -228,7 +228,7 @@ public Action cmdColor(int client, int args) {
 	}
 
 	HexStrToRGB(hex, g_iColor[client]);
-	SetColorCookie(client, hex);
+	SetCookieColor(client, hex);
 	return Plugin_Handled;
 }
 
@@ -256,7 +256,7 @@ public Action cmdPos(int client, int args) {
 
 		g_fPos[client][XPOS] = x;
 		g_fPos[client][YPOS] = y;
-		SetPosCookie(client, g_fPos[client]);
+		SetCookiePosition(client, g_fPos[client]);
 		PrintToChat(client, "Position updated to (%0.2f, %0.2f)", x, y);
 		return Plugin_Handled;
 	}
@@ -306,8 +306,8 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 
 			int flag = StringToInt(choice);
 			int flags = SetClientFlag(param1, flag);
-			SetEnableCookie(param1, (g_bEnabled[param1] = !!flags));
-			SetFlagsCookie(param1, flags);
+			SetCookieEnable(param1, (g_bEnabled[param1] = !!flags));
+			SetCookieFlags(param1, flags);
 			menu.DisplayAt(param1, menu.Selection, MENU_TIME_FOREVER);
 		}
 		case MenuAction_DisplayItem: {
@@ -371,24 +371,24 @@ void GetCookiePosition(int client) {
 
 // ------------------- Cookie Setters
 
-void SetEnableCookie(int client, bool enabled) {
+void SetCookieEnable(int client, bool enabled) {
 	char sEnable[2];
 	Format(sEnable, sizeof(sEnable), "%i", enabled);
 	SetClientCookie(client, g_hCookieSpeedoEnabled, sEnable);
 }
 
-void SetFlagsCookie(int client, int flags) {
+void SetCookieFlags(int client, int flags) {
 	char sFlags[2];
 	Format(sFlags, sizeof(sFlags), "%i", flags);
 	SetClientCookie(client, g_hCookieSpeedoFlags, sFlags);
 }
 
-void SetColorCookie(int client, const char[] hex) {
+void SetCookieColor(int client, const char[] hex) {
 	SetClientCookie(client, g_hCookieSpeedoColor, hex);
 	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
 }
 
-void SetPosCookie(int client, float pos[2]) {
+void SetCookiePosition(int client, float pos[2]) {
 	char posstr[10];
 	Format(posstr, sizeof(posstr), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
 	SetClientCookie(client, g_hCookieSpeedoPos, posstr);
