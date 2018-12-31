@@ -18,7 +18,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.2.0"
+#define PLUGIN_VERSION "0.2.1"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
 #define DISABLED 0
@@ -218,6 +218,9 @@ public Action cmdColor(int client, int args) {
 
 	if (!args) {
 		g_iColor[client] = g_iDefaultColor;
+		char hex[7];
+		RGBToHexStr(g_iColor[client], hex, sizeof(hex));
+		SetColorCookie(client, hex);
 		PrintToChat(client, "\x01[\x03Speedo\x01] Color reset. Use /speedo <hexvalue> to change.");
 		return Plugin_Handled;
 	}
@@ -315,6 +318,15 @@ void HexStrToRGB(const char[] hex, int rgb[3]) {
 	rgb[0] = ((hexInt >> 16) & 0xFF);
 	rgb[1] = ((hexInt >> 8) & 0xFF);
 	rgb[2] = ((hexInt >> 0) & 0xFF);
+}
+
+void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
+	int hex; 
+	hex |= ((rgb[0] & 0xFF) << 16);
+	hex |= ((rgb[1] & 0xFF) <<  8);
+	hex |= ((rgb[2] & 0xFF) <<  0);
+
+	Format(hexstr, size, "%6X", hex);
 }
 
 int SetClientFlag(int client, int flag) {
