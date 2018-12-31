@@ -4,8 +4,7 @@
 #include <sourcemod>
 #include <regex>
 #include <smlib/math>
-
-#define PLUGIN_VERSION "0.1.0"
+#include <clientprefs>
 
 enum (<<= 1) {
 	HORIZONTAL = 1,
@@ -13,16 +12,40 @@ enum (<<= 1) {
 	ABSOLUTE
 }
 
+enum {
+	RED,
+	GREEN,
+	BLUE
+}
+
+#define PLUGIN_VERSION "0.2.0"
+
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
 #define DISABLED 0
+#define XPOS 0
+#define YPOS 1
+#define XLOWER 0.0
+#define XUPPER 0.90
+#define YLOWER 0.0
+#define YUPPER 1.0
+#define XDEFAULT 0.47
+#define YDEFAULT 0.67
+#define FRAMELIMIT 3
+#define HOLDTIME 2.0
 
 Menu g_Menu;
+Handle g_hCookieSpeedoColor;
+Handle g_hCookieSpeedoPos;
 Handle g_hSpeedOMeter;
 Regex g_hRegexHex;
-int g_iFlags[MAXPLAYERS+1];
 int g_iColor[MAXPLAYERS+1][3];
 int g_iDefaultColor[] = {163, 163, 163};
+int g_iFlags[MAXPLAYERS+1];
+int g_iLastFrame[MAXPLAYERS+1];
 bool g_bEnabled[MAXPLAYERS+1];
+bool g_bEditing[MAXPLAYERS+1];
+bool g_bLateLoad;
+float g_fPos[MAXPLAYERS+1][2];
 
 public Plugin myinfo = {
 	name = "Speedometer",
@@ -32,49 +55,118 @@ public Plugin myinfo = {
 	url = "http://github.com/JoinedSenses"
 };
 
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
+	g_bLateLoad = late;
+	return APLRes_Success;
+}
+
 public void OnPluginStart() {
 	CreateConVar("sm_speedo_version", PLUGIN_VERSION, "Speedometer Version", FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY).SetString(PLUGIN_VERSION);
 
 	RegConsoleCmd("sm_speedo", cmdSpeedo);
 	RegConsoleCmd("sm_speedocolor", cmdColor);
+	RegConsoleCmd("sm_speedopos", cmdPos);
 
 	g_hSpeedOMeter = CreateHudSynchronizer();
 
 	BuildMenu();
 	for (int i = 0; i <= MaxClients; i++) {
-		SetDefaultColor(i);		
+		SetDefaults(i);		
 	}
 
 	g_hRegexHex = new Regex("([A-Fa-f0-9]{6})");
+
+	g_hCookieSpeedoColor = RegClientCookie("Speedo Color", "Speedo color cookie", CookieAccess_Private);
+	g_hCookieSpeedoPos = RegClientCookie("Speedo Position", "Speedo position cookie", CookieAccess_Private);
+
+	LateLoad();
+}
+
+void LateLoad() {
+	if (!g_bLateLoad) {
+		return;
+	}
+	for (int i = 1; i <= MaxClients; i++) {
+		if (AreClientCookiesCached(i)) {
+			OnClientCookiesCached(i);
+		}
+	}
+}
+
+public void OnClientCookiesCached(int client) {
+	char sColor[7];
+	GetClientCookie(client, g_hCookieSpeedoColor, sColor, sizeof(sColor));
+	if (sColor[0] != '\0') {
+		HexStrToRGB(sColor, g_iColor[client]);
+	}
+
+	char sPos[10];
+	GetClientCookie(client, g_hCookieSpeedoPos, sPos, sizeof(sPos));
+	if (sPos[0] != '\0') {
+		char buffer[2][5];
+		ExplodeString(sPos, " ", buffer, sizeof(buffer), sizeof(buffer[]));
+		g_fPos[client][XPOS] = StringToFloat(buffer[XPOS]);
+		g_fPos[client][YPOS] = StringToFloat(buffer[YPOS]);
+	}
 }
 
 public void OnClientDisconnect(int client) {
 	g_bEnabled[client] = false;
-	SetDefaultColor(client);
+	SetDefaults(client);
 }
 
-public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon) {
-	if (g_bEnabled[client] && !(buttons & IN_SCORE)) {
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
+	bool isEditing = g_bEditing[client];
+	int tick = GetGameTickCount();
+	if ((isEditing || (g_bEnabled[client] && (tick - g_iLastFrame[client]) > FRAMELIMIT)) && !(buttons & IN_SCORE)) {
+		if (isEditing) {
+			g_fPos[client][XPOS] = Math_Clamp(g_fPos[client][XPOS] + 0.0005 * mouse[0], XLOWER, XUPPER);
+			g_fPos[client][YPOS] = Math_Clamp(g_fPos[client][YPOS] + 0.0005 * mouse[1], YLOWER, YUPPER);
+
+			if (buttons & (IN_ATTACK|IN_ATTACK2)) {
+				g_bEditing[client] = false;
+				SetPosCookie(client, g_fPos[client]);
+
+				CreateTimer(0.2, timerUnfreeze, client);
+			}
+			else if (buttons & (IN_ATTACK3|IN_JUMP)) {
+				g_fPos[client][XPOS] = XDEFAULT;
+				g_fPos[client][YPOS] = YDEFAULT;
+
+				
+				g_bEditing[client] = false;
+				SetPosCookie(client, g_fPos[client]);
+				CreateTimer(0.2, timerUnfreeze, client);
+			}
+		}
+
 		char horizontal[24];
 		char vertical[24];
 		char absolute[24];
 
-		int flags = GetClientFlags(client);
+		int flags = isEditing ? ALL : GetClientFlags(client);
 		if (flags & HORIZONTAL) {
-			Format(horizontal, sizeof(horizontal), "H: %0.0f u/s\n", CalcVelocity(client, HORIZONTAL));
+			Format(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
 		}
 		if (flags & VERTICAL) {
-			Format(vertical, sizeof(vertical), "V: %0.0f u/s\n", CalcVelocity(client, VERTICAL));
+			Format(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
 		}
 		if (flags & ABSOLUTE) {
-			Format(absolute, sizeof(absolute), "A: %0.0f u/s", CalcVelocity(client, ABSOLUTE));
+			Format(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
 		}
+
 		char text[128];
 		Format(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
 
-		SetHudTextParams(0.47, 0.67, 1.0, g_iColor[client][0], g_iColor[client][1], g_iColor[client][2], 255);
+		SetHudTextParams(g_fPos[client][XPOS], g_fPos[client][YPOS], HOLDTIME, g_iColor[client][RED], g_iColor[client][GREEN], g_iColor[client][BLUE], 255, .fadeIn=0.0, .fadeOut=0.0);
 		ShowSyncHudText(client, g_hSpeedOMeter, text);
+
+		g_iLastFrame[client] = tick;
 	}
+}
+
+Action timerUnfreeze(Handle timer, int client) {
+	SetEntityFlags(client, GetEntityFlags(client) & ~(FL_ATCONTROLS|FL_FROZEN));
 }
 
 public Action cmdSpeedo(int client, int args) {
@@ -133,16 +225,87 @@ public Action cmdColor(int client, int args) {
 		return Plugin_Handled;
 	}
 
-	HexToRGB(hex, g_iColor[client]);
-	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%6XHex color updated", StringToInt(hex, 16));
+	HexStrToRGB(hex, g_iColor[client]);
+	SetColorCookie(client, hex);
 	return Plugin_Handled;
 }
 
-void SetDefaultColor(int client) {
-	g_iColor[client] = g_iDefaultColor;
+public Action cmdPos(int client, int args) {
+	if (!client) {
+		return Plugin_Handled;
+	}
+
+	if (args == 2) {
+		char xpos[6];
+		GetCmdArg(1, xpos, sizeof(xpos));
+		float x = StringToFloat(xpos);
+		if (x < XLOWER || x > XUPPER) {
+			PrintToChat(client, "\x01[\x03Speedo\x01] X pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)", x, YLOWER, YUPPER);
+			return Plugin_Handled;
+		}
+
+		char ypos[6];
+		GetCmdArg(2, ypos, sizeof(ypos));
+		float y = StringToFloat(ypos);
+		if (y < YLOWER || y > YUPPER) {
+			PrintToChat(client, "\x01[\x03Speedo\x01] Y pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)", y, YLOWER, YUPPER);
+			return Plugin_Handled;	
+		}
+
+		g_fPos[client][XPOS] = x;
+		g_fPos[client][YPOS] = y;
+		SetPosCookie(client, g_fPos[client]);
+		PrintToChat(client, "Position updated to (%0.2f, %0.2f)", x, y);
+		return Plugin_Handled;
+	}
+
+	if (IsClientObserver(client)) {
+		PrintToChat(client, "\x01[\x03Speedo\x01] Cannot use mouse position feature while in spectate");
+		return Plugin_Handled;
+	}
+
+	switch (g_bEditing[client]) {
+		case true: {
+			g_bEditing[client] = false;
+			SetEntityFlags(client, GetEntityFlags(client)&~(FL_ATCONTROLS|FL_FROZEN));
+		}
+		case false: {
+			g_bEditing[client] = true;
+			SetEntityFlags(client, GetEntityFlags(client)|FL_ATCONTROLS|FL_FROZEN);
+			PrintToChat(
+				client, "\x01"
+			...	"[\x03Speedo\x01] Update position using\x03 mouse movement\x01.\n"
+			... "[\x03Speedo\x01] Save with \x03attack\x01.\n"
+			... "[\x03Speedo\x01] Reset with \x03jump\x01."
+			);
+		}
+	}
+	return Plugin_Handled;
 }
 
-void HexToRGB(const char[] hex, int rgb[3]) {
+void SetColorCookie(int client, const char[] hex) {
+	SetClientCookie(client, g_hCookieSpeedoColor, hex);
+	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
+}
+
+void SetPosCookie(int client, float pos[2]) {
+	char posstr[10];
+	Format(posstr, sizeof(posstr), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
+	SetClientCookie(client, g_hCookieSpeedoPos, posstr);
+	PrintToChat(client, "\x01[\x03Speedo\x01] Position saved (%0.2f, %0.2f)", pos[0], pos[1]);
+}
+
+void SetDefaults(int client) {
+	g_iColor[client] = g_iDefaultColor;
+	g_fPos[client][XPOS] = XDEFAULT;
+	g_fPos[client][YPOS] = YDEFAULT;
+}
+
+bool IsValidHex(const char[] hex) {
+	return (strlen(hex) == 6 && g_hRegexHex.Match(hex));
+}
+
+void HexStrToRGB(const char[] hex, int rgb[3]) {
 	int hexInt = StringToInt(hex, 16);
 	rgb[0] = ((hexInt >> 16) & 0xFF);
 	rgb[1] = ((hexInt >> 8) & 0xFF);
@@ -186,10 +349,6 @@ float CalcVelocity(int client, int type) {
 
 float abs(float x) {
    return (x > 0) ? x : -x;
-}
-
-bool IsValidHex(const char[] hex) {
-	return (strlen(hex) == 6 && g_hRegexHex.Match(hex));
 }
 
 void displayMenu(int client) {
