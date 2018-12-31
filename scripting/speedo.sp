@@ -39,7 +39,7 @@ Handle g_hCookieSpeedoPos;
 Handle g_hSpeedOMeter;
 Regex g_hRegexHex;
 int g_iColor[MAXPLAYERS+1][3];
-int g_iDefaultColor[] = {68, 68, 68};
+int g_iDefaultColor[] = {255, 255, 255};
 int g_iFlags[MAXPLAYERS+1];
 int g_iLastFrame[MAXPLAYERS+1];
 bool g_bEnabled[MAXPLAYERS+1];
