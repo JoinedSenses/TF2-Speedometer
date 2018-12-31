@@ -18,7 +18,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.2.3"
+#define PLUGIN_VERSION "0.3.0"
 #define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
