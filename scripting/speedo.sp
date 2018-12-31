@@ -39,7 +39,7 @@ Handle g_hCookieSpeedoPos;
 Handle g_hSpeedOMeter;
 Regex g_hRegexHex;
 int g_iColor[MAXPLAYERS+1][3];
-int g_iDefaultColor[] = {163, 163, 163};
+int g_iDefaultColor[] = {68, 68, 68};
 int g_iFlags[MAXPLAYERS+1];
 int g_iLastFrame[MAXPLAYERS+1];
 bool g_bEnabled[MAXPLAYERS+1];
@@ -217,6 +217,12 @@ public Action cmdColor(int client, int args) {
 		return Plugin_Handled;
 	}
 
+	if (!args) {
+		g_iColor[client] = g_iDefaultColor;
+		PrintToChat(client, "\x01[\x03Speedo\x01] Color reset. Use /speedo <hexvalue> to change.");
+		return Plugin_Handled;
+	}
+
 	char hex[7];
 	GetCmdArg(1, hex, sizeof(hex));
 
@@ -362,7 +368,7 @@ void BuildMenu() {
 	g_Menu.AddItem("1", "Horizontal Speed");
 	g_Menu.AddItem("2", "Vertical Speed");
 	g_Menu.AddItem("4", "Absolute Speed");
-	g_Menu.AddItem("7", "All");
+	g_Menu.AddItem("7", "Toggle All");
 	g_Menu.AddItem("0", "Disable");
 }
 
