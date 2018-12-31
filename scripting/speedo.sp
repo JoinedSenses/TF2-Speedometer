@@ -19,6 +19,7 @@ enum {
 }
 
 #define PLUGIN_VERSION "0.2.3"
+#define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
 #define DISABLED 0
@@ -52,7 +53,7 @@ float g_fPos[MAXPLAYERS+1][2];
 public Plugin myinfo = {
 	name = "Speedometer",
 	author = "JoinedSenses",
-	description = "Speedometer",
+	description = PLUGIN_DESCRIPTION,
 	version = PLUGIN_VERSION,
 	url = "http://github.com/JoinedSenses"
 };
@@ -65,7 +66,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 }
 
 public void OnPluginStart() {
-	CreateConVar("sm_speedo_version", PLUGIN_VERSION, "Speedometer Version", FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY).SetString(PLUGIN_VERSION);
+	CreateConVar("sm_speedo_version", PLUGIN_VERSION, PLUGIN_DESCRIPTION, FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY).SetString(PLUGIN_VERSION);
 
 	RegConsoleCmd("sm_speedo", cmdSpeedo);
 	RegConsoleCmd("sm_speedocolor", cmdColor);
@@ -348,7 +349,6 @@ void GetCookieFlags(int client) {
 	GetClientCookie(client, g_hCookieSpeedoFlags, sFlags, sizeof(sFlags));
 	g_iFlags[client] = StringToInt(sFlags);
 }
-
 
 void GetCookieColor(int client) {
 	char sColor[7];
