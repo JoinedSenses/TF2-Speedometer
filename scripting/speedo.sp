@@ -18,7 +18,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.2.1"
+#define PLUGIN_VERSION "0.2.2"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
 #define DISABLED 0
@@ -34,6 +34,8 @@ enum {
 #define HOLDTIME 2.0
 
 Menu g_Menu;
+Handle g_hCookieSpeedoEnabled;
+Handle g_hCookieSpeedoFlags;
 Handle g_hCookieSpeedoColor;
 Handle g_hCookieSpeedoPos;
 Handle g_hSpeedOMeter;
@@ -76,8 +78,10 @@ public void OnPluginStart() {
 
 	g_hRegexHex = new Regex("([A-Fa-f0-9]{6})");
 
-	g_hCookieSpeedoColor = RegClientCookie("Speedo Color", "Speedo color cookie", CookieAccess_Private);
-	g_hCookieSpeedoPos = RegClientCookie("Speedo Position", "Speedo position cookie", CookieAccess_Private);
+	g_hCookieSpeedoEnabled = RegClientCookie("Speedo_Enable", "Speedo enable cookie", CookieAccess_Private);
+	g_hCookieSpeedoFlags = RegClientCookie("Speedo_Flags", "Speedo flag cookie", CookieAccess_Private);
+	g_hCookieSpeedoColor = RegClientCookie("Speedo_Color", "Speedo color cookie", CookieAccess_Private);
+	g_hCookieSpeedoPos = RegClientCookie("Speedo_Position", "Speedo position cookie", CookieAccess_Private);
 
 	LateLoad();
 }
@@ -87,13 +91,21 @@ void LateLoad() {
 		return;
 	}
 	for (int i = 1; i <= MaxClients; i++) {
-		if (AreClientCookiesCached(i)) {
+		if (IsValidClient(i) && AreClientCookiesCached(i)) {
 			OnClientCookiesCached(i);
 		}
 	}
 }
 
 public void OnClientCookiesCached(int client) {
+	char sEnable[2];
+	GetClientCookie(client, g_hCookieSpeedoEnabled, sEnable, sizeof(sEnable));
+	g_bEnabled[client] = (sEnable[0] != '0' && StringToInt(sEnable));
+
+	char flags[2];
+	GetClientCookie(client, g_hCookieSpeedoFlags, flags, sizeof(flags));
+	g_iFlags[client] = StringToInt(flags);
+
 	char sColor[7];
 	GetClientCookie(client, g_hCookieSpeedoColor, sColor, sizeof(sColor));
 	if (sColor[0] != '\0') {
@@ -116,6 +128,10 @@ public void OnClientDisconnect(int client) {
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
+	if (!IsValidClient(client)) {
+		return Plugin_Continue;
+	}
+
 	bool isEditing = g_bEditing[client];
 	int tick = GetGameTickCount();
 	if ((isEditing || (g_bEnabled[client] && (tick - g_iLastFrame[client]) > FRAMELIMIT)) && !(buttons & IN_SCORE)) {
@@ -162,6 +178,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 		g_iLastFrame[client] = tick;
 	}
+	return Plugin_Continue;
 }
 
 Action timerUnfreeze(Handle timer, int client) {
@@ -205,8 +222,9 @@ public Action cmdSpeedo(int client, int args) {
 			return Plugin_Handled;
 		}
 	}
-
-	g_bEnabled[client] = !!SetClientFlag(client, flag);
+	int flags = SetClientFlag(client, flag);
+	SetEnableCookie(client, (g_bEnabled[client] = !!flags));
+	SetFlagsCookie(client, flags);
 
 	return Plugin_Handled;
 }
@@ -291,6 +309,18 @@ public Action cmdPos(int client, int args) {
 	return Plugin_Handled;
 }
 
+void SetEnableCookie(int client, bool enabled) {
+	char sEnable[2];
+	Format(sEnable, sizeof(sEnable), "%i", enabled);
+	SetClientCookie(client, g_hCookieSpeedoEnabled, sEnable);
+}
+
+void SetFlagsCookie(int client, int flags) {
+	char sFlags[2];
+	Format(sFlags, sizeof(sFlags), "%i", flags);
+	SetClientCookie(client, g_hCookieSpeedoFlags, sFlags);
+}
+
 void SetColorCookie(int client, const char[] hex) {
 	SetClientCookie(client, g_hCookieSpeedoColor, hex);
 	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
@@ -307,6 +337,10 @@ void SetDefaults(int client) {
 	g_iColor[client] = g_iDefaultColor;
 	g_fPos[client][XPOS] = XDEFAULT;
 	g_fPos[client][YPOS] = YDEFAULT;
+}
+
+bool IsValidClient(int client) {
+	return (0 < client <= MaxClients && IsClientConnected(client) && IsClientInGame(client) && !IsFakeClient(client));
 }
 
 bool IsValidHex(const char[] hex) {
@@ -326,7 +360,7 @@ void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
 	hex |= ((rgb[1] & 0xFF) <<  8);
 	hex |= ((rgb[2] & 0xFF) <<  0);
 
-	Format(hexstr, size, "%6X", hex);
+	Format(hexstr, size, "%06X", hex);
 }
 
 int SetClientFlag(int client, int flag) {
@@ -390,8 +424,9 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 			menu.GetItem(param2, choice, sizeof(choice));
 
 			int flag = StringToInt(choice);
-
-			g_bEnabled[param1] = !!SetClientFlag(param1, flag);
+			int flags = SetClientFlag(param1, flag);
+			SetEnableCookie(param1, (g_bEnabled[param1] = !!flags));
+			SetFlagsCookie(param1, flags);
 			menu.DisplayAt(param1, menu.Selection, MENU_TIME_FOREVER);
 		}
 		case MenuAction_DisplayItem: {
