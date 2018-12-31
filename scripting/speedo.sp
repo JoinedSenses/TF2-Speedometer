@@ -31,7 +31,7 @@ enum {
 #define XDEFAULT 0.47
 #define YDEFAULT 0.67
 #define FRAMELIMIT 3
-#define HOLDTIME 2.0
+#define HOLDTIME 5.0
 
 Menu g_Menu;
 Handle g_hCookieSpeedoEnabled;
