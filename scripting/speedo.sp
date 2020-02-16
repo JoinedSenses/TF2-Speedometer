@@ -188,7 +188,7 @@ public Action cmdSpeedo(int client, int args) {
 	for (int i = 0; i < args; ++i) {
 		if (mode[i][1] != '\0') {
 			invalid = true;
-			continue;
+			break;
 		}
 
 		switch (mode[i][0]) {
