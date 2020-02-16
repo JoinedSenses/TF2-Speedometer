@@ -193,15 +193,15 @@ public Action cmdSpeedo(int client, int args) {
 
 		switch (mode[i][0]) {
 			case 'h', 'H': {
-				flags ^= HORIZONTAL;
+				flags |= HORIZONTAL;
 			}
 			case 'v', 'V': {
-				flags ^= VERTICAL;
+				flags |= VERTICAL;
 			}
 			case 'a', 'A': {
-				flags ^= ABSOLUTE;
+				flags |= ABSOLUTE;
 			}
-			case 'd', 'D': {
+			case 't', 'T': {
 				flags = flags ? 0 : ALL;
 				break;
 			}
@@ -213,7 +213,7 @@ public Action cmdSpeedo(int client, int args) {
 	}
 
 	if (invalid) {
-		PrintToChat(client, "\x01[\x03Speedo\x01] One or more invalid parameters. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03d");
+		PrintToChat(client, "\x01[\x03Speedo\x01] One or more invalid parameters. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03t");
 		return Plugin_Handled;
 	}
 
