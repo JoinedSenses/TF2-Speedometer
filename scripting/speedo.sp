@@ -18,7 +18,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.3.0"
+#define PLUGIN_VERSION "0.3.1"
 #define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
@@ -35,19 +35,24 @@ enum {
 #define HOLDTIME 5.0
 
 Menu g_Menu;
+
 Handle g_hCookieSpeedoEnabled;
 Handle g_hCookieSpeedoFlags;
 Handle g_hCookieSpeedoColor;
 Handle g_hCookieSpeedoPos;
 Handle g_hSpeedOMeter;
+
 Regex g_hRegexHex;
+
 int g_iColor[MAXPLAYERS+1][3];
 int g_iDefaultColor[] = {255, 255, 255};
 int g_iFlags[MAXPLAYERS+1];
 int g_iLastFrame[MAXPLAYERS+1];
+
 bool g_bEnabled[MAXPLAYERS+1];
 bool g_bEditing[MAXPLAYERS+1];
 bool g_bLateLoad;
+
 float g_fPos[MAXPLAYERS+1][2];
 
 public Plugin myinfo = {
@@ -76,7 +81,7 @@ public void OnPluginStart() {
 
 	BuildMenu();
 	for (int i = 0; i <= MaxClients; i++) {
-		SetDefaults(i);		
+		SetDefaults(i);
 	}
 
 	g_hRegexHex = new Regex("([A-Fa-f0-9]{6})");
@@ -171,35 +176,48 @@ public Action cmdSpeedo(int client, int args) {
 		displayMenu(client);
 		return Plugin_Handled;
 	}
+	char arg[32];
+	GetCmdArgString(arg, sizeof(arg));
 
-	char mode[32];
-	GetCmdArg(1, mode, sizeof(mode));
+	char[][] mode = new char[args][3];
+	ExplodeString(arg, " ", mode, args, 3);
 
-	if (strlen(mode) > 1) {
-		PrintToChat(client, "\x01[\x03Speedo\x01] Invalid parameter. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03d");
+	bool invalid = false;
+	int flags;
+
+	for (int i = 0; i < args; ++i) {
+		if (mode[i][1] != '\0') {
+			invalid = true;
+			continue;
+		}
+
+		switch (mode[i][0]) {
+			case 'h', 'H': {
+				flags ^= HORIZONTAL;
+			}
+			case 'v', 'V': {
+				flags ^= VERTICAL;
+			}
+			case 'a', 'A': {
+				flags ^= ABSOLUTE;
+			}
+			case 'd', 'D': {
+				flags = flags ? 0 : ALL;
+				break;
+			}
+			default: {
+				invalid = true;
+				break;
+			}
+		}
+	}
+
+	if (invalid) {
+		PrintToChat(client, "\x01[\x03Speedo\x01] One or more invalid parameters. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03d");
 		return Plugin_Handled;
 	}
 
-	int flag;
-	switch (mode[0]) {
-		case 'h', 'H': {
-			flag = HORIZONTAL;
-		}
-		case 'v', 'V': {
-			flag = VERTICAL;
-		}
-		case 'a', 'A': {
-			flag = ABSOLUTE;
-		}
-		case 'd', 'D': {
-			flag = ALL;
-		}
-		default: {
-			PrintToChat(client, "\x01[\x03Speedo\x01] Invalid parameter. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03d");
-			return Plugin_Handled;
-		}
-	}
-	int flags = SetClientFlag(client, flag);
+	SetClientFlag(client, flags);
 	SetCookieEnable(client, (g_bEnabled[client] = !!flags));
 	SetCookieFlags(client, flags);
 
@@ -328,7 +346,7 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 			char choice[2];
 			menu.GetItem(param2, choice, sizeof(choice));
 
-			if (!StringToInt(choice) && !GetClientFlags(param1)) {
+			if (choice[0] == '0' && !GetClientFlags(param1)) {
 				return ITEMDRAW_DISABLED;
 			}
 		}
@@ -426,8 +444,8 @@ void SetDefaults(int client) {
 void HexStrToRGB(const char[] hex, int rgb[3]) {
 	int hexInt = StringToInt(hex, 16);
 	rgb[0] = ((hexInt >> 16) & 0xFF);
-	rgb[1] = ((hexInt >> 8) & 0xFF);
-	rgb[2] = ((hexInt >> 0) & 0xFF);
+	rgb[1] = ((hexInt >>  8) & 0xFF);
+	rgb[2] = ((hexInt >>  0) & 0xFF);
 }
 
 void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
@@ -452,7 +470,9 @@ int SetClientFlag(int client, int flag) {
 			g_iFlags[client] |= flag;
 		}		
 	}
-	else g_iFlags[client] = DISABLED;
+	else {
+		g_iFlags[client] = DISABLED;
+	}
 
 	return g_iFlags[client];
 }
