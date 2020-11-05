@@ -3,7 +3,6 @@
 
 #include <sourcemod>
 #include <regex>
-#include <smlib/math>
 #include <clientprefs>
 
 enum (<<= 1) {
@@ -18,7 +17,7 @@ enum {
 	BLUE
 }
 
-#define PLUGIN_VERSION "0.3.1"
+#define PLUGIN_VERSION "0.3.2"
 #define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define ALL (HORIZONTAL|VERTICAL|ABSOLUTE)
@@ -31,16 +30,17 @@ enum {
 #define YUPPER 1.0
 #define XDEFAULT 0.47
 #define YDEFAULT 0.67
-#define FRAMELIMIT 3
+#define FRAMELIMIT 2
 #define HOLDTIME 5.0
 
 Menu g_Menu;
 
-Handle g_hCookieSpeedoEnabled;
-Handle g_hCookieSpeedoFlags;
-Handle g_hCookieSpeedoColor;
-Handle g_hCookieSpeedoPos;
-Handle g_hSpeedOMeter;
+Cookie g_CookieEnabled;
+Cookie g_CookieFlags;
+Cookie g_CookieColor;
+Cookie g_CookiePos;
+
+Handle g_HudSync;
 
 Regex g_hRegexHex;
 
@@ -71,13 +71,18 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 }
 
 public void OnPluginStart() {
-	CreateConVar("sm_speedo_version", PLUGIN_VERSION, PLUGIN_DESCRIPTION, FCVAR_SPONLY|FCVAR_NOTIFY|FCVAR_DONTRECORD).SetString(PLUGIN_VERSION);
+	CreateConVar(
+		"sm_speedo_version",
+		PLUGIN_VERSION,
+		PLUGIN_DESCRIPTION,
+		FCVAR_SPONLY|FCVAR_NOTIFY|FCVAR_DONTRECORD
+	).SetString(PLUGIN_VERSION);
 
 	RegConsoleCmd("sm_speedo", cmdSpeedo);
 	RegConsoleCmd("sm_speedocolor", cmdColor);
 	RegConsoleCmd("sm_speedopos", cmdPos);
 
-	g_hSpeedOMeter = CreateHudSynchronizer();
+	g_HudSync = CreateHudSynchronizer();
 
 	BuildMenu();
 	for (int i = 0; i <= MaxClients; i++) {
@@ -86,14 +91,14 @@ public void OnPluginStart() {
 
 	g_hRegexHex = new Regex("([A-Fa-f0-9]{6})");
 
-	g_hCookieSpeedoEnabled = RegClientCookie("Speedo_Enable", "Speedo enable cookie", CookieAccess_Private);
-	g_hCookieSpeedoFlags = RegClientCookie("Speedo_Flags", "Speedo flag cookie", CookieAccess_Private);
-	g_hCookieSpeedoColor = RegClientCookie("Speedo_Color", "Speedo color cookie", CookieAccess_Private);
-	g_hCookieSpeedoPos = RegClientCookie("Speedo_Position", "Speedo position cookie", CookieAccess_Private);
+	g_CookieEnabled = new Cookie("Speedo_Enable", "Speedo enable cookie", CookieAccess_Private);
+	g_CookieFlags = new Cookie("Speedo_Flags", "Speedo flag cookie", CookieAccess_Private);
+	g_CookieColor = new Cookie("Speedo_Color", "Speedo color cookie", CookieAccess_Private);
+	g_CookiePos = new Cookie("Speedo_Position", "Speedo position cookie", CookieAccess_Private);
 
 	if (g_bLateLoad) {
 		for (int i = 1; i <= MaxClients; i++) {
-			if (IsValidClient(i) && AreClientCookiesCached(i)) {
+			if (IsClientInGame(i) && !IsFakeClient(i) && AreClientCookiesCached(i)) {
 				OnClientCookiesCached(i);
 			}
 		}
@@ -111,7 +116,20 @@ public void OnClientCookiesCached(int client) {
 	GetCookiePosition(client);
 }
 
-public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
+float Clamp(float value, float min, float max) {
+	if (value > max) {
+		return max;
+	}
+
+	if (value < min) {
+		return min;
+	}
+
+	return value;
+}
+
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon,
+		int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
 	if (!IsValidClient(client)) {
 		return Plugin_Continue;
 	}
@@ -120,8 +138,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	int tick = GetGameTickCount();
 	if ((isEditing || (g_bEnabled[client] && (tick - g_iLastFrame[client]) > FRAMELIMIT)) && !(buttons & IN_SCORE)) {
 		if (isEditing) {
-			g_fPos[client][XPOS] = Math_Clamp(g_fPos[client][XPOS] + 0.0005 * mouse[0], XLOWER, XUPPER);
-			g_fPos[client][YPOS] = Math_Clamp(g_fPos[client][YPOS] + 0.0005 * mouse[1], YLOWER, YUPPER);
+			g_fPos[client][XPOS] = Clamp(g_fPos[client][XPOS] + 0.0005 * mouse[0], XLOWER, XUPPER);
+			g_fPos[client][YPOS] = Clamp(g_fPos[client][YPOS] + 0.0005 * mouse[1], YLOWER, YUPPER);
 
 			if (buttons & (IN_ATTACK|IN_ATTACK2)) {
 				g_bEditing[client] = false;
@@ -145,20 +163,30 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 		int flags = isEditing ? ALL : GetClientFlags(client);
 		if (flags & HORIZONTAL) {
-			Format(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
+			FormatEx(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
 		}
 		if (flags & VERTICAL) {
-			Format(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
+			FormatEx(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
 		}
 		if (flags & ABSOLUTE) {
-			Format(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
+			FormatEx(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
 		}
 
 		char text[128];
-		Format(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
+		FormatEx(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
 
-		SetHudTextParams(g_fPos[client][XPOS], g_fPos[client][YPOS], HOLDTIME, g_iColor[client][RED], g_iColor[client][GREEN], g_iColor[client][BLUE], 255, .fadeIn=0.0, .fadeOut=0.0);
-		ShowSyncHudText(client, g_hSpeedOMeter, text);
+		SetHudTextParams(
+			g_fPos[client][XPOS],
+			g_fPos[client][YPOS],
+			HOLDTIME,
+			g_iColor[client][RED],
+			g_iColor[client][GREEN],
+			g_iColor[client][BLUE],
+			255,
+			.fadeIn=0.0,
+			.fadeOut=0.0
+		);
+		ShowSyncHudText(client, g_HudSync, text);
 
 		g_iLastFrame[client] = tick;
 	}
@@ -176,6 +204,7 @@ public Action cmdSpeedo(int client, int args) {
 		displayMenu(client);
 		return Plugin_Handled;
 	}
+
 	char arg[32];
 	GetCmdArgString(arg, sizeof(arg));
 
@@ -191,17 +220,17 @@ public Action cmdSpeedo(int client, int args) {
 			break;
 		}
 
-		switch (mode[i][0]) {
-			case 'h', 'H': {
+		switch (CharToLower(mode[i][0])) {
+			case 'h': {
 				flags |= HORIZONTAL;
 			}
-			case 'v', 'V': {
+			case 'v': {
 				flags |= VERTICAL;
 			}
-			case 'a', 'A': {
+			case 'a': {
 				flags |= ABSOLUTE;
 			}
-			case 't', 'T': {
+			case 't': {
 				flags = flags ? 0 : ALL;
 				break;
 			}
@@ -213,7 +242,11 @@ public Action cmdSpeedo(int client, int args) {
 	}
 
 	if (invalid) {
-		PrintToChat(client, "\x01[\x03Speedo\x01] One or more invalid parameters. Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03t");
+		PrintToChat(
+			client,
+			"\x01[\x03Speedo\x01] One or more invalid parameters. " ...
+			"Parameters: \x03h\x01, \x03v\x01, \x03a\x01, \x03t"
+		);
 		return Plugin_Handled;
 	}
 
@@ -231,10 +264,14 @@ public Action cmdColor(int client, int args) {
 
 	if (!args) {
 		g_iColor[client] = g_iDefaultColor;
+
 		char hex[7];
 		RGBToHexStr(g_iColor[client], hex, sizeof(hex));
+
 		SetCookieColor(client, hex);
+
 		PrintToChat(client, "\x01[\x03Speedo\x01] Color reset. Use /speedo <hexvalue> to change.");
+
 		return Plugin_Handled;
 	}
 
@@ -248,6 +285,7 @@ public Action cmdColor(int client, int args) {
 
 	HexStrToRGB(hex, g_iColor[client]);
 	SetCookieColor(client, hex);
+
 	return Plugin_Handled;
 }
 
@@ -259,24 +297,36 @@ public Action cmdPos(int client, int args) {
 	if (args == 2) {
 		char xpos[6];
 		GetCmdArg(1, xpos, sizeof(xpos));
+
 		float x = StringToFloat(xpos);
 		if (x < XLOWER || x > XUPPER) {
-			PrintToChat(client, "\x01[\x03Speedo\x01] X pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)", x, YLOWER, YUPPER);
+			PrintToChat(
+				client,
+				"\x01[\x03Speedo\x01] X pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)",
+				x, XLOWER, XUPPER
+			);
 			return Plugin_Handled;
 		}
 
 		char ypos[6];
 		GetCmdArg(2, ypos, sizeof(ypos));
+
 		float y = StringToFloat(ypos);
 		if (y < YLOWER || y > YUPPER) {
-			PrintToChat(client, "\x01[\x03Speedo\x01] Y pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)", y, YLOWER, YUPPER);
+			PrintToChat(
+				client,
+				"\x01[\x03Speedo\x01] Y pos [%0.2f] out of bounds: Range (%0.2f, %0.2f)",
+				y, YLOWER, YUPPER
+			);
 			return Plugin_Handled;	
 		}
 
 		g_fPos[client][XPOS] = x;
 		g_fPos[client][YPOS] = y;
 		SetCookiePosition(client, g_fPos[client]);
+
 		PrintToChat(client, "Position updated to (%0.2f, %0.2f)", x, y);
+
 		return Plugin_Handled;
 	}
 
@@ -285,22 +335,22 @@ public Action cmdPos(int client, int args) {
 		return Plugin_Handled;
 	}
 
-	switch (g_bEditing[client]) {
-		case true: {
-			g_bEditing[client] = false;
-			SetEntityFlags(client, GetEntityFlags(client)&~(FL_ATCONTROLS|FL_FROZEN));
-		}
-		case false: {
-			g_bEditing[client] = true;
-			SetEntityFlags(client, GetEntityFlags(client)|FL_ATCONTROLS|FL_FROZEN);
-			PrintToChat(
-				client, "\x01"
-			...	"[\x03Speedo\x01] Update position using\x03 mouse movement\x01.\n"
-			... "[\x03Speedo\x01] Save with \x03attack\x01.\n"
-			... "[\x03Speedo\x01] Reset with \x03jump\x01."
-			);
-		}
+	if (g_bEditing[client]) {
+		g_bEditing[client] = false;
+		SetEntityFlags(client, GetEntityFlags(client)&~(FL_ATCONTROLS|FL_FROZEN));
 	}
+	else {
+		g_bEditing[client] = true;
+		SetEntityFlags(client, GetEntityFlags(client)|FL_ATCONTROLS|FL_FROZEN);
+		PrintToChat(
+			client,
+			"\x01" ...
+			"[\x03Speedo\x01] Update position using\x03 mouse movement\x01.\n" ...
+			"[\x03Speedo\x01] Save with \x03attack\x01.\n" ...
+			"[\x03Speedo\x01] Reset with \x03jump\x01."
+		);
+	}
+
 	return Plugin_Handled;
 }
 
@@ -338,7 +388,7 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 			int flag = StringToInt(choice);
 			int clientflags = GetClientFlags(param1);
 			if (flag && (flag & clientflags) == flag) {
-				Format(buffer, sizeof(buffer), "%s (Current)", type);
+				FormatEx(buffer, sizeof(buffer), "%s (Current)", type);
 				return RedrawMenuItem(buffer);
 			}
 		}
@@ -351,37 +401,38 @@ int menuHandler_Speedo(Menu menu, MenuAction action, int param1, int param2) {
 			}
 		}
 	}
+
 	return 0;
 }
 
 // ------------------- Cookie Getters
 
 void GetCookieEnabled(int client) {
-	char sEnable[2];
-	GetClientCookie(client, g_hCookieSpeedoEnabled, sEnable, sizeof(sEnable));
-	g_bEnabled[client] = (sEnable[0] != '\0' && StringToInt(sEnable));
+	char enable[2];
+	g_CookieEnabled.Get(client, enable, sizeof(enable));
+	g_bEnabled[client] = (enable[0] == '1');
 }
 
 void GetCookieFlags(int client) {
-	char sFlags[2];
-	GetClientCookie(client, g_hCookieSpeedoFlags, sFlags, sizeof(sFlags));
-	g_iFlags[client] = StringToInt(sFlags);
+	char flags[2];
+	g_CookieFlags.Get(client, flags, sizeof(flags));
+	g_iFlags[client] = StringToInt(flags);
 }
 
 void GetCookieColor(int client) {
-	char sColor[7];
-	GetClientCookie(client, g_hCookieSpeedoColor, sColor, sizeof(sColor));
-	if (sColor[0] != '\0') {
-		HexStrToRGB(sColor, g_iColor[client]);
+	char color[7];
+	g_CookieColor.Get(client, color, sizeof(color));
+	if (color[0] != '\0') {
+		HexStrToRGB(color, g_iColor[client]);
 	}	
 }
 
 void GetCookiePosition(int client) {
-	char sPos[10];
-	GetClientCookie(client, g_hCookieSpeedoPos, sPos, sizeof(sPos));
-	if (sPos[0] != '\0') {
+	char position[10];
+	g_CookiePos.Get(client, position, sizeof(position));
+	if (position[0] != '\0') {
 		char buffer[2][5];
-		ExplodeString(sPos, " ", buffer, sizeof(buffer), sizeof(buffer[]));
+		ExplodeString(position, " ", buffer, sizeof(buffer), sizeof(buffer[]));
 		g_fPos[client][XPOS] = StringToFloat(buffer[XPOS]);
 		g_fPos[client][YPOS] = StringToFloat(buffer[YPOS]);
 	}	
@@ -390,26 +441,24 @@ void GetCookiePosition(int client) {
 // ------------------- Cookie Setters
 
 void SetCookieEnable(int client, bool enabled) {
-	char sEnable[2];
-	Format(sEnable, sizeof(sEnable), "%i", enabled);
-	SetClientCookie(client, g_hCookieSpeedoEnabled, sEnable);
+	g_CookieEnabled.Set(client, enabled ? "1" : "0");
 }
 
 void SetCookieFlags(int client, int flags) {
 	char sFlags[2];
-	Format(sFlags, sizeof(sFlags), "%i", flags);
-	SetClientCookie(client, g_hCookieSpeedoFlags, sFlags);
+	IntToString(flags, sFlags, sizeof sFlags);
+	g_CookieFlags.Set(client, sFlags);
 }
 
 void SetCookieColor(int client, const char[] hex) {
-	SetClientCookie(client, g_hCookieSpeedoColor, hex);
+	g_CookieColor.Set(client, hex);
 	PrintToChat(client, "\x01[\x03Speedo\x01] \x07%06XHex color updated: %s", StringToInt(hex, 16), hex);
 }
 
 void SetCookiePosition(int client, float pos[2]) {
-	char posstr[10];
-	Format(posstr, sizeof(posstr), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
-	SetClientCookie(client, g_hCookieSpeedoPos, posstr);
+	char sPos[10];
+	FormatEx(sPos, sizeof(sPos), "%0.2f %0.2f", pos[XPOS], pos[YPOS]);
+	g_CookiePos.Set(client, sPos);
 	PrintToChat(client, "\x01[\x03Speedo\x01] Position saved (%0.2f, %0.2f)", pos[0], pos[1]);
 }
 
@@ -422,7 +471,7 @@ Action timerUnfreeze(Handle timer, int client) {
 // ------------------- Internal Functions
 
 bool IsValidClient(int client) {
-	return (0 < client <= MaxClients && IsClientConnected(client) && IsClientInGame(client) && !IsFakeClient(client));
+	return (0 < client <= MaxClients && IsClientInGame(client) && !IsFakeClient(client));
 }
 
 bool IsValidHex(const char[] hex) {
@@ -454,7 +503,7 @@ void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
 	hex |= ((rgb[1] & 0xFF) <<  8);
 	hex |= ((rgb[2] & 0xFF) <<  0);
 
-	Format(hexstr, size, "%06X", hex);
+	FormatEx(hexstr, size, "%06X", hex);
 }
 
 int GetClientFlags(int client) {
@@ -478,22 +527,29 @@ int SetClientFlag(int client, int flag) {
 }
 
 float abs(float x) {
-   return (x > 0) ? x : -x;
+   return (x < 0) ? -x : x;
 }
 
 float CalcVelocity(int client, int type) {
 	float currentVel[3];
 	GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
+	
 	switch (type) {
 		case HORIZONTAL: {
-			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]));
+			float x = currentVel[0];
+			float y = currentVel[1];
+			return SquareRoot(x*x + y*y);
 		}
 		case VERTICAL: {
 			return abs(currentVel[2]);
 		}
 		case ABSOLUTE: {
-			return SquareRoot((currentVel[0]*currentVel[0]) + (currentVel[1]*currentVel[1]) + (currentVel[2]*currentVel[2]));
+			float x = currentVel[0];
+			float y = currentVel[1];
+			float z = currentVel[2];
+			return SquareRoot(x*x + y*y + z*z);
 		}
 	}
+
 	return -1.0;
 }
