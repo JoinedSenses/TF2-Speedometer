@@ -527,13 +527,13 @@ int SetClientFlag(int client, int flag) {
 }
 
 float abs(float x) {
-   return (x < 0) ? -x : x;
+   return view_as<float>(view_as<int>(x) & ~(cellmin));
 }
 
 float CalcVelocity(int client, int type) {
 	float currentVel[3];
 	GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
-	
+
 	switch (type) {
 		case HORIZONTAL: {
 			float x = currentVel[0];
