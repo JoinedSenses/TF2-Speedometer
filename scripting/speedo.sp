@@ -5,7 +5,7 @@
 #include <regex>
 #include <clientprefs>
 
-#define PLUGIN_VERSION "0.3.2"
+#define PLUGIN_VERSION "0.3.3"
 #define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define HORIZONTAL (1 << 0)
@@ -31,8 +31,7 @@
 #define X_DEFAULT 0.47
 #define Y_DEFAULT 0.67
 
-#define FRAMELIMIT 2
-#define HOLDTIME 5.0
+#define HOLDTIME 0.1
 #define COLOR_DEFAULT {255, 255, 255}
 
 Menu g_Menu;
@@ -48,7 +47,6 @@ Regex g_hRegexHex;
 
 int g_iColor[MAXPLAYERS+1][3];
 int g_iFlags[MAXPLAYERS+1];
-int g_iLastFrame[MAXPLAYERS+1];
 
 bool g_bEnabled[MAXPLAYERS+1];
 bool g_bEditing[MAXPLAYERS+1];
@@ -117,67 +115,79 @@ public void OnClientCookiesCached(int client) {
 	GetCookiePosition(client);
 }
 
+bool g_bInScore[MAXPLAYERS+1];
+
+public void OnGameFrame() {
+	for (int client = 1; client <= MaxClients; ++client)
+	{
+		if (!IsClientInGame(client) || IsFakeClient(client))
+		{
+			continue;
+		}
+
+		bool isEditing = g_bEditing[client];
+		if ((isEditing || g_bEnabled[client]) && !g_bInScore[client]) {
+			int flags = isEditing ? ALL : GetClientFlags(client);
+
+			char horizontal[24];
+			if (flags & HORIZONTAL) {
+				FormatEx(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
+			}
+			char vertical[24];
+			if (flags & VERTICAL) {
+				FormatEx(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
+			}
+			char absolute[24];
+			if (flags & ABSOLUTE) {
+				FormatEx(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
+			}
+
+			char text[128];
+			FormatEx(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
+
+			SetHudTextParams(
+				g_fPos[client][X_POS],
+				g_fPos[client][Y_POS],
+				HOLDTIME,
+				g_iColor[client][RED],
+				g_iColor[client][GREEN],
+				g_iColor[client][BLUE],
+				255,
+				.fadeIn = 0.0,
+				.fadeOut = 0.0
+			);
+
+			ShowSyncHudText(client, g_HudSync, text);
+		}
+	}
+}
+
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon,
 int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
 	if (!IsValidClient(client)) {
 		return Plugin_Continue;
 	}
 
-	bool isEditing = g_bEditing[client];
-	int tick = GetGameTickCount();
-	if ((isEditing || (g_bEnabled[client] && (tick - g_iLastFrame[client]) > FRAMELIMIT)) && !(buttons & IN_SCORE)) {
-		if (isEditing) {
-			g_fPos[client][X_POS] = Clamp(g_fPos[client][X_POS] + 0.0005 * mouse[0], X_MIN, X_MAX);
-			g_fPos[client][Y_POS] = Clamp(g_fPos[client][Y_POS] + 0.0005 * mouse[1], Y_MIN, Y_MAX);
+	g_bInScore[client] = (buttons & IN_SCORE) != 0;
 
-			if (buttons & (IN_ATTACK|IN_ATTACK2)) {
-				g_bEditing[client] = false;
-				SetCookiePosition(client, g_fPos[client]);
+	if (g_bEditing[client]) {
+		g_fPos[client][X_POS] = Clamp(g_fPos[client][X_POS] + 0.0005 * mouse[0], X_MIN, X_MAX);
+		g_fPos[client][Y_POS] = Clamp(g_fPos[client][Y_POS] + 0.0005 * mouse[1], Y_MIN, Y_MAX);
 
-				CreateTimer(0.2, timerUnfreeze, client);
-			}
-			else if (buttons & (IN_ATTACK3|IN_JUMP)) {
-				g_fPos[client][X_POS] = X_DEFAULT;
-				g_fPos[client][Y_POS] = Y_DEFAULT;
-				
-				g_bEditing[client] = false;
-				SetCookiePosition(client, g_fPos[client]);
-				CreateTimer(0.2, timerUnfreeze, client);
-			}
+		if (buttons & (IN_ATTACK|IN_ATTACK2)) {
+			g_bEditing[client] = false;
+			SetCookiePosition(client, g_fPos[client]);
+
+			CreateTimer(0.2, timerUnfreeze, client);
 		}
-
-		char horizontal[24];
-		char vertical[24];
-		char absolute[24];
-
-		int flags = isEditing ? ALL : GetClientFlags(client);
-		if (flags & HORIZONTAL) {
-			FormatEx(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
+		else if (buttons & (IN_ATTACK3|IN_JUMP)) {
+			g_fPos[client][X_POS] = X_DEFAULT;
+			g_fPos[client][Y_POS] = Y_DEFAULT;
+			
+			g_bEditing[client] = false;
+			SetCookiePosition(client, g_fPos[client]);
+			CreateTimer(0.2, timerUnfreeze, client);
 		}
-		if (flags & VERTICAL) {
-			FormatEx(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
-		}
-		if (flags & ABSOLUTE) {
-			FormatEx(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
-		}
-
-		char text[128];
-		FormatEx(text, sizeof(text), "%s%s%s", horizontal, vertical, absolute);
-
-		SetHudTextParams(
-			g_fPos[client][X_POS],
-			g_fPos[client][Y_POS],
-			HOLDTIME,
-			g_iColor[client][RED],
-			g_iColor[client][GREEN],
-			g_iColor[client][BLUE],
-			255,
-			.fadeIn = 0.0,
-			.fadeOut = 0.0
-		);
-		ShowSyncHudText(client, g_HudSync, text);
-
-		g_iLastFrame[client] = tick;
 	}
 
 	return Plugin_Continue;
@@ -480,7 +490,6 @@ void displayMenu(int client) {
 
 void SetDefaults(int client) {
 	g_bEnabled[client] = false;
-	g_iLastFrame[client] = 0;
 	g_iColor[client] = COLOR_DEFAULT;
 	g_fPos[client][X_POS] = X_DEFAULT;
 	g_fPos[client][Y_POS] = Y_DEFAULT;
