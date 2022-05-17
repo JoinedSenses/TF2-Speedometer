@@ -4,8 +4,9 @@
 #include <sourcemod>
 #include <regex>
 #include <clientprefs>
+#include <jslib>
 
-#define PLUGIN_VERSION "0.3.3"
+#define PLUGIN_VERSION "0.3.4"
 #define PLUGIN_DESCRIPTION "Displays player velocity"
 
 #define HORIZONTAL (1 << 0)
@@ -34,6 +35,15 @@
 #define HOLDTIME 0.1
 #define COLOR_DEFAULT {255, 255, 255}
 
+enum Axis: {
+	Horizontal,
+	Vertical,
+	Absolute,
+	AXIS_MAX
+}
+
+bool g_bLateLoad;
+
 Menu g_Menu;
 
 Cookie g_CookieEnabled;
@@ -45,14 +55,15 @@ Handle g_HudSync;
 
 Regex g_hRegexHex;
 
+bool g_bEnabled[MAXPLAYERS+1];
 int g_iColor[MAXPLAYERS+1][3];
 int g_iFlags[MAXPLAYERS+1];
-
-bool g_bEnabled[MAXPLAYERS+1];
 bool g_bEditing[MAXPLAYERS+1];
-bool g_bLateLoad;
-
 float g_fPos[MAXPLAYERS+1][2];
+bool g_bInScore[MAXPLAYERS+1];
+
+float g_fLastSpeed[MAXPLAYERS+1][AXIS_MAX];
+float g_fLastIncrease[MAXPLAYERS+1][AXIS_MAX];
 
 public Plugin myinfo = {
 	name = "Speedometer",
@@ -115,31 +126,36 @@ public void OnClientCookiesCached(int client) {
 	GetCookiePosition(client);
 }
 
-bool g_bInScore[MAXPLAYERS+1];
-
 public void OnGameFrame() {
-	for (int client = 1; client <= MaxClients; ++client)
-	{
-		if (!IsClientInGame(client) || IsFakeClient(client))
-		{
+	for (int client = 1; client <= MaxClients; ++client) {
+		if (!IsClientInGame(client) || IsFakeClient(client)) {
 			continue;
 		}
 
 		bool isEditing = g_bEditing[client];
 		if ((isEditing || g_bEnabled[client]) && !g_bInScore[client]) {
 			int flags = isEditing ? ALL : GetClientFlags(client);
+			if (!flags) {
+				g_bEnabled[client] = false;
+				continue;
+			}
 
-			char horizontal[24];
+			float velocity[3];
+			GetEntPropVector(client, Prop_Data, "m_vecVelocity", velocity);
+
+			char horizontal[32];
 			if (flags & HORIZONTAL) {
-				FormatEx(horizontal, sizeof(horizontal), "H: %04.0f u/s\n", CalcVelocity(client, HORIZONTAL));
+				FormatInfo(horizontal, sizeof(horizontal), client, velocity, Horizontal, 'H');
 			}
-			char vertical[24];
+			
+			char vertical[32];
 			if (flags & VERTICAL) {
-				FormatEx(vertical, sizeof(vertical), "V: %04.0f u/s\n", CalcVelocity(client, VERTICAL));
+				FormatInfo(vertical, sizeof(vertical), client, velocity, Vertical, 'V');
 			}
-			char absolute[24];
+			
+			char absolute[32];
 			if (flags & ABSOLUTE) {
-				FormatEx(absolute, sizeof(absolute), "A: %04.0f u/s", CalcVelocity(client, ABSOLUTE));
+				FormatInfo(absolute, sizeof(absolute), client, velocity, Absolute, 'A');
 			}
 
 			char text[128];
@@ -162,17 +178,28 @@ public void OnGameFrame() {
 	}
 }
 
+void FormatInfo(char[] buffer, int size, int client, const float velocity[3], Axis axis, char prefix) {
+	float speed = CalcSpeed(velocity, axis);
+	float last = g_fLastSpeed[client][axis];
+	if (speed > last) {
+		g_fLastIncrease[client][axis] = speed;
+	}
+
+	FormatEx(buffer, size, "%c: %04.0f u/s %0.0f\n", prefix, AbsF(speed), g_fLastIncrease[client][axis]);
+	g_fLastSpeed[client][axis] = speed;
+}
+
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon,
 int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
 	if (!IsValidClient(client)) {
 		return Plugin_Continue;
 	}
 
-	g_bInScore[client] = (buttons & IN_SCORE) != 0;
+	g_bInScore[client] = (buttons & IN_SCORE) == IN_SCORE;
 
 	if (g_bEditing[client]) {
-		g_fPos[client][X_POS] = Clamp(g_fPos[client][X_POS] + 0.0005 * mouse[0], X_MIN, X_MAX);
-		g_fPos[client][Y_POS] = Clamp(g_fPos[client][Y_POS] + 0.0005 * mouse[1], Y_MIN, Y_MAX);
+		g_fPos[client][X_POS] = ClampF(g_fPos[client][X_POS] + 0.0005 * mouse[0], X_MIN, X_MAX);
+		g_fPos[client][Y_POS] = ClampF(g_fPos[client][Y_POS] + 0.0005 * mouse[1], Y_MIN, Y_MAX);
 
 		if (buttons & (IN_ATTACK|IN_ATTACK2)) {
 			g_bEditing[client] = false;
@@ -201,7 +228,7 @@ public Action cmdSpeedo(int client, int args) {
 	}
 
 	if (!args) {
-		displayMenu(client);
+		g_Menu.Display(client, MENU_TIME_FOREVER);
 		return Plugin_Handled;
 	}
 
@@ -266,7 +293,7 @@ public Action cmdColor(int client, int args) {
 		g_iColor[client] = COLOR_DEFAULT;
 
 		char hex[7];
-		RGBToHexStr(g_iColor[client], hex, sizeof(hex));
+		RGBToHex(g_iColor[client], hex, sizeof(hex));
 
 		SetCookieColor(client, hex);
 
@@ -283,7 +310,7 @@ public Action cmdColor(int client, int args) {
 		return Plugin_Handled;
 	}
 
-	HexStrToRGB(hex, g_iColor[client]);
+	HexToRGB(hex, g_iColor[client]);
 	SetCookieColor(client, hex);
 
 	return Plugin_Handled;
@@ -425,7 +452,7 @@ void GetCookieColor(int client) {
 	g_CookieColor.Get(client, color, sizeof(color));
 
 	if (color[0] != '\0') {
-		HexStrToRGB(color, g_iColor[client]);
+		HexToRGB(color, g_iColor[client]);
 	}	
 }
 
@@ -470,7 +497,7 @@ void SetCookiePosition(int client, float pos[2]) {
 
 // ------------------- Timer
 
-Action timerUnfreeze(Handle timer, int client) {
+public Action timerUnfreeze(Handle timer, int client) {
 	SetEntityFlags(client, GetEntityFlags(client) & ~(FL_ATCONTROLS|FL_FROZEN));
 }
 
@@ -484,31 +511,17 @@ bool IsValidHex(const char[] hex) {
 	return (strlen(hex) == 6 && g_hRegexHex.Match(hex));
 }
 
-void displayMenu(int client) {
-	g_Menu.Display(client, MENU_TIME_FOREVER);
-}
-
 void SetDefaults(int client) {
 	g_bEnabled[client] = false;
 	g_iColor[client] = COLOR_DEFAULT;
 	g_fPos[client][X_POS] = X_DEFAULT;
 	g_fPos[client][Y_POS] = Y_DEFAULT;
-}
-
-void HexStrToRGB(const char[] hex, int rgb[3]) {
-	int hexInt = StringToInt(hex, 16);
-	rgb[0] = ((hexInt >> 16) & 0xFF);
-	rgb[1] = ((hexInt >>  8) & 0xFF);
-	rgb[2] = ((hexInt >>  0) & 0xFF);
-}
-
-void RGBToHexStr(int rgb[3], char[] hexstr, int size) {
-	int hex; 
-	hex |= ((rgb[0] & 0xFF) << 16);
-	hex |= ((rgb[1] & 0xFF) <<  8);
-	hex |= ((rgb[2] & 0xFF) <<  0);
-
-	FormatEx(hexstr, size, "%06X", hex);
+	g_fLastSpeed[client][Horizontal] = 0.0;
+	g_fLastSpeed[client][Vertical] = 0.0;
+	g_fLastSpeed[client][Absolute] = 0.0;
+	g_fLastIncrease[client][Horizontal] = 0.0;
+	g_fLastIncrease[client][Vertical] = 0.0;
+	g_fLastIncrease[client][Absolute] = 0.0;
 }
 
 int GetClientFlags(int client) {
@@ -526,42 +539,23 @@ int SetClientFlag(int client, int flag) {
 	return g_iFlags[client];
 }
 
-float Clamp(float value, float min, float max) {
-	if (value > max) {
-		return max;
-	}
-	
-	if (value < min) {
-		return min;
-	}
-
-	return value;
-}
-
-float abs(float x) {
-   return view_as<float>(view_as<int>(x) & ~(cellmin));
-}
-
-float CalcVelocity(int client, int type) {
-	float currentVel[3];
-	GetEntPropVector(client, Prop_Data, "m_vecVelocity", currentVel);
-
-	switch (type) {
-		case HORIZONTAL: {
-			float x = currentVel[0];
-			float y = currentVel[1];
+float CalcSpeed(const float velocity[3], Axis axis) {
+	switch (axis) {
+		case Horizontal: {
+			float x = velocity[0];
+			float y = velocity[1];
 			return SquareRoot(x*x + y*y);
 		}
-		case VERTICAL: {
-			return abs(currentVel[2]);
+		case Vertical: {
+			return velocity[2];
 		}
-		case ABSOLUTE: {
-			float x = currentVel[0];
-			float y = currentVel[1];
-			float z = currentVel[2];
+		case Absolute: {
+			float x = velocity[0];
+			float y = velocity[1];
+			float z = velocity[2];
 			return SquareRoot(x*x + y*y + z*z);
 		}
 	}
 
-	return -1.0;
+	return 0.0;
 }
